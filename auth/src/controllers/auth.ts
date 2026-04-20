@@ -74,4 +74,25 @@ export const loginUser = TryCatch(async (req, res, next) => {
   FILTER (WHERE s.name IS NOT NULL) as skills FROM users u LEFT JOIN user_skills us on u.user_id =us.user_id
   LEFT JOIN skills s ON us.skill_id=s.skill_id WHERE u.email=${email} GROUP BY u.user_id;
   `;
+
+  if (user.length === 0) {
+    throw new ErrorHandler(400, "Invalid credentials");
+  }
+  const userObject = user[0];
+  const matchPassword = bcrypt.compare(password, userObject.password);
+  if (!matchPassword) {
+    throw new ErrorHandler(400, "Invalid credentials");
+  }
+  userObject.skills = userObject.skills || [];
+  delete userObject.password;
+
+  const token = jwt.sign(
+    { id: userObject?.user_id },
+    process.env.JWT_SEC as string,
+    {
+      expiresIn: "15d",
+    },
+  );
+
+  res.json({ message: "User LoggedIn", userObject, token });
 });
