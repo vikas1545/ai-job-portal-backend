@@ -29,8 +29,8 @@ export const startSendMailConsumer = async () => {
             port: 465,
             secure: true,
             auth: {
-              user: "xyz",
-              pass: "yzx",
+              user: "vikaskumar.vk0612@gmail.com",
+              pass: "dhxmjuqujxjvkzqy",
             },
           });
 
