@@ -7,6 +7,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { forgetPasswordTemplate } from "../template.js";
 import { publishToTopic } from "../producer.js";
+import { redisClient } from "../index.js";
 
 export const registerUser = TryCatch(async (req, res, next) => {
   const { name, email, password, phoneNumber, role, bio } = req.body;
@@ -119,6 +120,9 @@ export const forgotPassword = TryCatch(async (req, res, next) => {
   );
 
   const resetLink = `${process.env.Frontend_url}/reset/${resetToken}`;
+  await redisClient.set(`forgot:${email}`, resetToken, {
+    EX: 900,
+  });
 
   const message = {
     to: email,
@@ -126,7 +130,50 @@ export const forgotPassword = TryCatch(async (req, res, next) => {
     html: forgetPasswordTemplate(resetLink),
   };
 
-  await publishToTopic("send-mail", message).catch(err=>console.log('❌ Failed to send email message'));
+  await publishToTopic("send-mail", message).catch((err) =>
+    console.log("❌ Failed to send email message"),
+  );
 
   res.json({ message: "If that email exists,we have sent a reset link" });
+});
+
+export const resetPassword = TryCatch(async (req, res, next) => {
+  const { token } = req.params;
+  const { password } = req.body;
+
+  if (!token || typeof token !== "string") {
+    throw new ErrorHandler(400, "Token missing or invalid");
+  }
+
+  if (!password) {
+    throw new ErrorHandler(400, "Password is required");
+  }
+
+  let decoded: any;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SEC as string);
+  } catch (error) {
+    throw new ErrorHandler(400, "Expired token");
+  }
+
+  if (decoded.type !== "reset") {
+    throw new ErrorHandler(400, "Invalid token type");
+  }
+  const email = decoded.email;
+  const storedToken = await redisClient.get(`forgot:${email}`);
+  if (!storedToken || storedToken !== token) {
+    throw new ErrorHandler(400, "Invalid or expired token");
+  }
+
+  const users = await sql`SELECT user_id from users WHERE email=${email}`;
+  if (users.length === 0) {
+    throw new ErrorHandler(404, "No user found");
+  }
+  const user = users[0];
+  const hashPassword = await bcrypt.hash(password, 10);
+  await sql`UPDATE users SET password=${hashPassword} WHERE user_id=${user.user_id}`;
+
+  await redisClient.del(`forgot:${email}`);
+
+  res.json({ message: "Password changed succesfully" });
 });
