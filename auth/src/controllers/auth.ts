@@ -28,7 +28,7 @@ export const registerUser = TryCatch(async (req, res, next) => {
   if (role === "recruiter") {
     const [user] =
       await sql`INSERT INTO users (name, email, password, phone_number, role) VALUES 
-        (${name}, ${email}, ${hasPassword}, ${role}) RETURNING name, email, password, phone_number, role, created_at`;
+        (${name}, ${email}, ${hasPassword}, ${phoneNumber}, ${role}) RETURNING user_id, name, email, phone_number, role, created_at`;
 
     registeredUser = user;
   } else if (role === "jobseeker") {
@@ -82,7 +82,7 @@ export const loginUser = TryCatch(async (req, res, next) => {
     throw new ErrorHandler(400, "Invalid credentials");
   }
   const userObject = user[0];
-  const matchPassword =await bcrypt.compare(password, userObject.password);
+  const matchPassword = await bcrypt.compare(password, userObject.password);
 
   if (!matchPassword) {
     throw new ErrorHandler(400, "Invalid credentials");
