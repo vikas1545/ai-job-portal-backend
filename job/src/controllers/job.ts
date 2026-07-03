@@ -67,6 +67,7 @@ export const deleteCompany = TryCatch(
     const { companyId } = req.params;
     const [company] =
       await sql`SELECT logo_public_id FROM companies WHERE company_id=${companyId} AND recruiter_id=${user?.user_id}`;
+
     if (!company) {
       throw new ErrorHandler(
         404,
@@ -74,8 +75,144 @@ export const deleteCompany = TryCatch(
       );
     }
 
+    if (company?.logo_public_id) {
+      const { data } = await axios.delete(
+        `${process.env.UPLOAD_SERVICE}/api/utils/deleteFile/${company.logo_public_id}`,
+      );
+      if (!data.status) {
+        throw new ErrorHandler(500, "Failed to delete company logo");
+      }
+    }
+
     await sql`DELETE FROM companies WHERE company_id=${companyId}`;
 
     res.json({ message: "Company and all associated jobs have been deleted." });
+  },
+);
+
+export const createJob = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const user = req.user;
+
+  if (!user) {
+    throw new ErrorHandler(401, "Authentication is required");
+  }
+
+  if (user.role !== "recruiter") {
+    throw new ErrorHandler(403, "Forbidden: Only recruiter can create a job");
+  }
+
+  const {
+    title,
+    description,
+    salary,
+    location,
+    role,
+    job_type,
+    work_location,
+    company_id,
+    openings,
+  } = req.body;
+  if (!title || !description || !salary || !location || !role || !openings) {
+    throw new ErrorHandler(400, "All fields are required");
+  }
+
+  const [company] =
+    await sql`SELECT company_id FROM companies WHERE company_id=${company_id} AND recruiter_id=${user.user_id}`;
+
+  if (!company) {
+    throw new ErrorHandler(404, "Company not found!");
+  }
+
+  const [newJob] =
+    await sql`INSERT INTO jobs(title, description, salary, location, role, job_type, work_location, company_id,
+    posted_by_recruiter_id, openings) VALUES(${title},${description},${salary},${location},${role},${job_type},
+    ${work_location},${company_id},${user.user_id},${openings}) RETURNING *`;
+
+  res.json({ message: "Job posted successfully!", job: newJob });
+});
+
+export const updateJob = TryCatch(async (req: AuthenticatedRequest, res) => {
+  const user = req.user;
+
+  if (!user) {
+    throw new ErrorHandler(401, "Authentication is required");
+  }
+
+  if (user.role !== "recruiter") {
+    throw new ErrorHandler(403, "Forbidden: Only recruiter can create a job");
+  }
+
+  const {
+    title,
+    description,
+    salary,
+    location,
+    role,
+    job_type,
+    work_location,
+    company_id,
+    openings,
+    is_active,
+  } = req.body;
+  if (!title || !description || !salary || !location || !role || !openings) {
+    throw new ErrorHandler(400, "All fields are required");
+  }
+
+  const [company] =
+    await sql`SELECT company_id FROM companies WHERE company_id=${company_id} AND recruiter_id=${user.user_id}`;
+
+  if (!company) {
+    throw new ErrorHandler(404, "Company not found!");
+  }
+
+  const [existingJob] =
+    await sql`SELECT posted_by_recruiter_id FROM jobs where job_id=${req.params.jobId}`;
+
+  if (!existingJob) {
+    throw new ErrorHandler(404, "Job not found!");
+  }
+
+  if (existingJob.posted_by_recruiter_id !== user.user_id) {
+    throw new ErrorHandler(403, "Forbiden: You are not allowed !");
+  }
+
+  const [updatedJob] =
+    await sql`UPDATE jobs SET title=${title},description=${description},salary=${salary},
+    location=${location},role=${role},job_type=${job_type},work_location=${work_location},
+    company_id=${company_id},posted_by_recruiter_id=${user.user_id},openings=${openings},
+    is_active=${is_active} WHERE  job_id=${req.params.jobId} RETURNING *`;
+
+  res.json({ message: "Job updated successfully!", job: updatedJob });
+});
+
+export const getAllCompany = TryCatch(
+  async (req: AuthenticatedRequest, res) => {
+    const user = req.user;
+
+    if (!user) {
+      throw new ErrorHandler(401, "Authentication is required");
+    }
+
+    const companies =
+      await sql`SELECT * FROM companies where recruiter_id=${req.user?.user_id}`;
+
+    res.json(companies);
+  },
+);
+
+export const getCompanyDetails = TryCatch(
+  async (req: AuthenticatedRequest, res) => {
+    const user = req.user;
+    const { id } = req.params;
+
+    if (!user) {
+      throw new ErrorHandler(401, "Authentication is required");
+    }
+
+    const [companyData] = await sql`SELECT c.*, COALESCE(
+      (SELECT json_agg(j.*) FROM jobs j WHERE j.company_id=c.company_id),'[]'::json) AS jobs
+      FROM companies c WHERE c.company_id=${id} GROUP BY c.company_id`;
+
+    res.json(companyData);
   },
 );
