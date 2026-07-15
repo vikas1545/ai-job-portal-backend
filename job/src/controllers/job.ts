@@ -4,6 +4,8 @@ import getBuffer from "../utils/buffer.js";
 import { sql } from "../utils/db.js";
 import ErrorHandler from "../utils/errorHandler.js";
 import { TryCatch } from "../utils/TryCatch.js";
+import { applicationStatusUpdateTemplate } from "../template.js";
+import { publishToTopic } from "../producer.js";
 
 export const createCompany = TryCatch(
   async (req: AuthenticatedRequest, res) => {
@@ -217,48 +219,124 @@ export const getCompanyDetails = TryCatch(
   },
 );
 
-export const getAllActiveJobs = TryCatch(
-  async (req, res) => {
-    const { title, location } = req.query as {
-      title?: String;
-      location?: String;
-    };
+export const getAllActiveJobs = TryCatch(async (req, res) => {
+  const { title, location } = req.query as {
+    title?: String;
+    location?: String;
+  };
 
-    let queryString = `SELECT j.job_id, j.title, j.description, j.salary, j.job_type, j.role, j.location, j.work_location, 
+  let queryString = `SELECT j.job_id, j.title, j.description, j.salary, j.job_type, j.role, j.location, j.work_location, 
     j.created_at, c.name AS company_name, c.logo AS company_logo, c.company_id AS company_id FROM jobs j JOIN companies c
     ON j.company_id=c.company_id WHERE j.is_active=true`;
 
-    const values = [];
+  const values = [];
 
-    let paramIndex = 1;
+  let paramIndex = 1;
 
-    if (title?.trim()) {
-      queryString += ` AND j.title ILIKE $${paramIndex}`;
-      values.push(`%${title?.trim()}%`);
-      paramIndex++;
+  if (title?.trim()) {
+    queryString += ` AND j.title ILIKE $${paramIndex}`;
+    values.push(`%${title?.trim()}%`);
+    paramIndex++;
+  }
+
+  if (location?.trim()) {
+    queryString += ` AND j.location ILIKE $${paramIndex}`;
+    values.push(`%${location?.trim()}%`);
+    paramIndex++;
+  }
+
+  queryString += " ORDER BY j.created_at DESC";
+
+  const jobs = (await sql.query(queryString, values)) as any;
+
+  res.json(jobs);
+});
+
+export const getSingleJob = TryCatch(async (req, res) => {
+  const [job] = await sql`SELECT * FROM jobs WHERE job_id=${req.params.jobId}`;
+
+  if (!job) {
+    throw new ErrorHandler(404, "No job found");
+  }
+
+  res.json(job);
+});
+
+export const getAllApplicationForJob = TryCatch(
+  async (req: AuthenticatedRequest, res) => {
+    const user = req.user;
+    if (!user) {
+      throw new ErrorHandler(401, "Authentication is required");
     }
 
-    if (location?.trim()) {
-      queryString += ` AND j.location ILIKE $${paramIndex}`;
-      values.push(`%${location?.trim()}%`);
-      paramIndex++;
+    if (user.role !== "recruiter") {
+      throw new ErrorHandler(403, "Forbidden: Only recruiter can Access this ");
     }
 
-    queryString += " ORDER BY j.created_at DESC";
+    const { jobId } = req.params;
 
-    const jobs = (await sql.query(queryString, values)) as any;
+    const [job] =
+      await sql`SELECT posted_by_recruiter_id FROM jobs WHERE job_id=${jobId}`;
 
-    res.json(jobs);
+    if (!job) {
+      throw new ErrorHandler(404, "Job not found");
+    }
+
+    if (job.posted_by_recruiter_id !== user.user_id) {
+      throw new ErrorHandler(403, "Forbidden you are not allowed");
+    }
+
+    const applications =
+      await sql`SELECT * FROM applications WHERE job_id=${jobId} ORDER BY subscribed DESC, applied_at ASC`;
+
+    res.json(applications);
   },
 );
 
-
-export const getSingleJob = TryCatch(async (req, res) => {
-    const [job]=await sql`SELECT * FROM jobs WHERE job_id=${req.params.jobId}`;
-
-    if(!job){
-      throw new ErrorHandler(404, "No job found");
+export const updateApplication = TryCatch(
+  async (req: AuthenticatedRequest, res) => {
+    const user = req.user;
+    if (!user) {
+      throw new ErrorHandler(401, "Authentication is required");
     }
 
-    res.json(job)
-  })
+    if (user.role !== "recruiter") {
+      throw new ErrorHandler(403, "Forbidden: Only recruiter can Access this ");
+    }
+
+    const { id } = req.params;
+    const [application] =
+      await sql`SELECT * FROM applications WHERE application_id=${id}`;
+
+    if (!application) {
+      throw new ErrorHandler(404, "No application found");
+    }
+
+    const [job] =
+      await sql`SELECT posted_by_recruiter_id, title FROM jobs WHERE job_id=${application.job_id}`;
+
+    if (!job) {
+      throw new ErrorHandler(404, "No job found with this id");
+    }
+
+    if (job.posted_by_recruiter_id !== user.user_id) {
+      throw new ErrorHandler(
+        403,
+        "Forbidden: You are not allowed to access this ",
+      );
+    }
+
+    const [updatedApplication] =
+      await sql`UPDATE applications SET status=${req.body.status} WHERE application_id=${id} RETURNING *`;
+
+    const message = {
+      to: application.applicant_email,
+      subject: "Application Update - Job portal",
+      html: applicationStatusUpdateTemplate(job.title),
+    };
+
+    publishToTopic("send-mail",message).catch(err=>console.log("❌ Failed to publish message to kafka for job application status change"))
+
+    res.json({message:'Application status updated',job,updateApplication})
+  },
+);
