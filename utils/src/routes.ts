@@ -129,4 +129,113 @@ Mastery', 'DevOps & Cloud').",
   }
 });
 
+router.post('/resume-analyser', async (req, res) => {
+  try {
+    const { pdfBase64 } = req.body;
+    if (!pdfBase64) {
+      res.status(400).json({ message: 'PDF is required!' })
+    }
+
+    const prompt = `
+You are an expert ATS (Applicant Tracking System) analyzer.
+
+Analyze the following resume and provide:
+1. An ATS compatibility score (0-100).
+2. Detailed suggestions to improve the resume for better ATS performance.
+
+Your entire response **must** be valid JSON. Do not include any text, explanations, or markdown outside of the JSON object.
+
+Return the response in the following format:
+
+{
+  "atsScore": 85,
+  "scoreBreakdown": {
+    "formatting": {
+      "score": 90,
+      "feedback": "Brief feedback on formatting."
+    },
+    "keywords": {
+      "score": 80,
+      "feedback": "Brief feedback on keyword usage."
+    },
+    "structure": {
+      "score": 85,
+      "feedback": "Brief feedback on resume structure."
+    },
+    "readability": {
+      "score": 88,
+      "feedback": "Brief feedback on readability."
+    }
+  },
+  "suggestions": [
+    {
+      "category": "Formatting",
+      "issue": "Description of the issue found.",
+      "recommendation": "Specific actionable recommendation to fix it.",
+      "priority": "high"
+    }
+  ],
+  "strengths": [
+    "List of things the resume does well for ATS."
+  ],
+  "summary": "A brief 2-3 sentence summary of the overall ATS performance."
+}
+
+Focus your analysis on:
+- File format and ATS compatibility
+- Resume structure and organization
+- Standard section headings
+- Keyword optimization
+- Formatting issues (tables, columns, graphics, icons, special characters)
+- Contact information placement
+- Date formatting consistency
+- Use of action verbs
+- Quantifiable achievements
+- Section flow and readability
+
+Ensure all scores are realistic and consistent with the feedback provided.
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [{
+        role: 'user',
+        parts: [{ text: prompt },
+        {
+          inlineData:
+          {
+            mimeType: 'application/pdf',
+            data: pdfBase64.replace(/^data:application\/pdf;base64,/, '')
+          }
+        }
+        ]
+      }],
+    })
+
+    let jsonResponse;
+
+    try {
+      const rowText = response.text?.replace(/```json/g, "").replace(/```/g, "").trim();
+
+      if (!rowText) {
+        throw new Error("AI did not return a valid response.")
+      }
+
+      jsonResponse = JSON.parse(rowText)
+    } catch (error) {
+      return res.status(500).json({
+        message: 'AI returned a response that was not valid json.',
+        rowResponse: response.text
+      })
+    }
+
+    res.json(jsonResponse)
+
+
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+
+})
+
 export default router;
