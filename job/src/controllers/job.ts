@@ -342,6 +342,6 @@ export const updateApplication = TryCatch(
 
     publishToTopic("send-mail",message).catch(err=>console.log("❌ Failed to publish message to kafka for job application status change"))
 
-    res.json({message:'Application status updated',job,updateApplication})
+    res.json({message:'Application status updated',job,updatedApplication})
   },
 );
