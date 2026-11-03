@@ -115,8 +115,7 @@ export const updateResume = TryCatch(
       throw new ErrorHandler(500, "Failed to generate buffer");
     }
 
-    const { data: uploadResult } = await axios.post(
-      `${process.env.UPLOAD_SERVICE}/api/utils/upload`,
+    const { data: uploadResult } = await axios.post(`${process.env.UPLOAD_SERVICE}/api/utils/upload`,
       {
         buffer: fileBuffer.content,
         public_id: oldPublicId,
@@ -129,6 +128,40 @@ export const updateResume = TryCatch(
     `;
 
     res.json({ message: "Resume Updated", updatedUser });
+  },
+);
+
+export const deleteResume = TryCatch(
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const user = req.user;
+
+    if (!user) {
+      throw new ErrorHandler(401, "Authentication required");
+    }
+
+    const resumePublicId = user.resume_public_id;
+    const resume = user.resume;
+
+    if (!resumePublicId || !resume) {
+      throw new ErrorHandler(404, "No resume to delete");
+    }
+
+    if (resumePublicId!==user.resume_public_id && resume!==user.resume) {
+      throw new ErrorHandler(403, "Not allowed to delete resume");
+    }
+
+    try {
+      await axios.delete(`${process.env.UPLOAD_SERVICE}/api/utils/deleteFile/${resumePublicId}`);
+    } catch (err) {
+      throw new ErrorHandler(500, "Failed to delete resume from storage");
+    }
+
+    const [updatedUser] = await sql`
+    UPDATE users SET resume=null, resume_public_id=null WHERE user_id=${user.user_id} 
+    RETURNING user_id, name, resume,resume_public_id;
+    `;
+
+    res.json({ message: "Resume deleted", updatedUser });
   },
 );
 

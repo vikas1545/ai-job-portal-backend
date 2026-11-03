@@ -9,6 +9,7 @@ import {
   myProfile,
   updateProfilePic,
   updateResume,
+  deleteResume,
   updateUserProfile,
 } from "../controllers/user.js";
 import uploadFile from "../middlewares/multer.js";
@@ -19,6 +20,7 @@ router.get("/:userId", isAuth, getUserProfile);
 router.put("/update/profile", isAuth, updateUserProfile);
 router.put("/update/pic", isAuth, uploadFile, updateProfilePic);
 router.put("/update/resume", isAuth, uploadFile, updateResume);
+router.put("/delete/resume/:publicId", isAuth, deleteResume);
 router.post("/skill/add", isAuth, addSkillToUser);
 router.delete("/skill/delete", isAuth, deleteSkillFromUser);
 router.post("/apply/job", isAuth, applyForJob);

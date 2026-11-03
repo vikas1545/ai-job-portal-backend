@@ -225,9 +225,14 @@ export const getAllActiveJobs = TryCatch(async (req, res) => {
     location?: String;
   };
 
-  let queryString = `SELECT j.job_id, j.title, j.description, j.salary, j.job_type, j.role, j.location, j.work_location, 
+  // let queryString = `SELECT j.job_id, j.title, j.description, j.salary, j.job_type, j.role, j.location, j.work_location, 
+  //   j.created_at, c.name AS company_name, c.logo AS company_logo, c.company_id AS company_id FROM jobs j JOIN companies c
+  //   ON j.company_id=c.company_id WHERE j.is_active=true`;
+
+  //All jobs if even if is not
+  let queryString = `SELECT j.job_id,j.is_active,j.title, j.description, j.salary, j.job_type, j.role, j.location, j.work_location, 
     j.created_at, c.name AS company_name, c.logo AS company_logo, c.company_id AS company_id FROM jobs j JOIN companies c
-    ON j.company_id=c.company_id WHERE j.is_active=true`;
+    ON j.company_id=c.company_id`;
 
   const values = [];
 
@@ -337,6 +342,6 @@ export const updateApplication = TryCatch(
 
     publishToTopic("send-mail",message).catch(err=>console.log("❌ Failed to publish message to kafka for job application status change"))
 
-    res.json({message:'Application status updated',job,updateApplication})
+    res.json({message:'Application status updated',job,updatedApplication})
   },
 );
